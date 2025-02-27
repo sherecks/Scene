@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gráfico de Rede para Cenas de Filme</title>
+    <title>Network Scene</title>
     <style>
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -22,6 +22,11 @@
             padding: 20px;
             box-shadow: 2px 0 10px rgba(0, 0, 0, 0.5);
             overflow-y: auto;
+            scrollbar-width: none; /* Firefox */
+            -ms-overflow-style: none;  /* IE and Edge */
+        }
+        .sidebar::-webkit-scrollbar {
+            display: none; /* Chrome, Safari and Opera */
         }
         .main-content {
             flex: 1;
@@ -31,17 +36,17 @@
         .graph-container {
             flex: 1;
             position: relative;
+            overflow: hidden;
         }
-        .comments-section {
-            height: 200px;
-            background-color: #202020;
-            padding: 15px;
-            overflow-y: auto;
-        }
-        h1, h2 {
+
+        h1{
+            margin: 0 auto;
             color: #aaaaaa;
-            margin-top: 0;
         }
+        h2 {
+            color: #aaaaaa;
+        }
+
         button {
             background-color: #404040;
             color: white;
@@ -56,7 +61,7 @@
             background-color: #505050;
         }
         input, select, textarea {
-            width: 100%;
+            width: 88%;
             padding: 8px;
             margin: 5px 0 15px;
             border-radius: 4px;
@@ -71,20 +76,6 @@
             stroke-width: 2px;
             stroke-opacity: 0.6;
         }
-        .comment {
-            background-color: #2a2a2a;
-            padding: 10px;
-            border-radius: 5px;
-            margin-bottom: 10px;
-        }
-        .comment-author {
-            font-weight: bold;
-            color: #aaaaaa;
-        }
-        .comment-time {
-            font-size: 0.8em;
-            color: #777777;
-        }
         .node-label {
             font-size: 12px;
             pointer-events: none;
@@ -97,21 +88,31 @@
             padding: 10px;
             border-radius: 5px;
         }
-        #tooltip {
-            position: absolute;
-            background-color: rgba(40, 40, 40, 0.9);
-            padding: 10px;
-            border-radius: 5px;
-            display: none;
-            pointer-events: none;
-            z-index: 100;
+        .node-text {
+            width: 88%;
+            height: 80px;
+            resize: vertical;
+            margin-bottom: 10px;
+        }
+        .slider-container {
+            margin: 10px 0;
+        }
+        .slider-label {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 5px;
+        }
+        .slider-value {
+            font-weight: bold;
+            margin-right: 20px;
         }
     </style>
+
 </head>
 <body>
     <div class="container">
         <div class="sidebar">
-            <h1>Planejador de Cenas</h1>
+            <h1>Network Scene</h1>
             
             <h2>Adicionar Nó</h2>
             <select id="node-type">
@@ -123,7 +124,7 @@
             </select>
             <input type="text" id="node-name" placeholder="Nome">
             <button id="add-node">Adicionar Nó</button>
-            
+
             <h2>Adicionar Conexão</h2>
             <select id="source-node">
                 <option value="">Selecionar origem</option>
@@ -132,16 +133,38 @@
                 <option value="">Selecionar destino</option>
             </select>
             <button id="add-link">Conectar</button>
-            
+
             <h2>Detalhes do Nó</h2>
             <div id="node-details">
                 <p>Clique em um nó para ver detalhes</p>
             </div>
             
-            <h2>Exportar/Importar</h2>
-            <button id="export-btn">Exportar Gráfico</button>
-            <input type="file" id="import-file" accept=".json">
-            <button id="import-btn">Importar Gráfico</button>
+            <h2>Configurações do Gráfico</h2>
+            <div class="slider-container">
+                <div class="slider-label">
+                    <span>Distância entre nós:</span>
+                    <span class="slider-value" id="distance-value">100</span>
+                </div>
+                <input type="range" id="node-distance" min="50" max="300" value="100">
+            </div>
+            
+            <div class="slider-container">
+                <div class="slider-label">
+                    <span>Multiplicador de tamanho:</span>
+                    <span class="slider-value" id="size-value">1.0</span>
+                </div>
+                <input type="range" id="node-size" min="5" max="25" value="10" step="0.5">
+            </div>
+            
+            <div class="slider-container">
+                <div class="slider-label">
+                    <span>Força de repulsão:</span>
+                    <span class="slider-value" id="charge-value">-200</span>
+                </div>
+                <input type="range" id="charge-strength" min="-500" max="-50" value="-200" step="10">
+            </div>
+            
+            <button id="apply-settings">Aplicar Configurações</button>
         </div>
         
         <div class="main-content">
@@ -152,45 +175,22 @@
                     <button id="zoom-out">-</button>
                     <button id="reset-view">Redefinir</button>
                 </div>
-                <div id="tooltip"></div>
-            </div>
-            
-            <div class="comments-section">
-                <h2>Comentários</h2>
-                <div id="comments-container"></div>
-                <textarea id="comment-input" placeholder="Adicione um comentário sobre esta cena..."></textarea>
-                <input type="text" id="comment-author" placeholder="Seu nome">
-                <button id="add-comment">Publicar Comentário</button>
             </div>
         </div>
     </div>
     
     <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
     <script>
-        // Inicializar dados
-        let nodes = [
-            { id: 1, name: "Cena de Abertura", type: "scene", x: 400, y: 300 },
-            { id: 2, name: "Introdução do Personagem", type: "scene", x: 500, y: 200 },
-            { id: 3, name: "Localização na Praia", type: "location", x: 300, y: 400 },
-            { id: 4, name: "Personagem Principal", type: "character", x: 600, y: 300 },
-            { id: 5, name: "Tomada do Pôr do Sol", type: "shot", x: 400, y: 500 }
-        ];
-        
-        let links = [
-            { source: 1, target: 3 },
-            { source: 1, target: 4 },
-            { source: 2, target: 4 },
-            { source: 1, target: 5 },
-            { source: 3, target: 5 }
-        ];
-        
-        let comments = [
-            { author: "Diretor", text: "Acho que devemos filmar a cena de abertura durante o pôr do sol.", time: "10:30" },
-            { author: "Cinegrafista", text: "Vamos usar uma lente grande angular para as tomadas na praia.", time: "11:15" }
-        ];
-        
+        // Inicializar dados vazios
+        let nodes = [];
+        let links = [];
         let selectedNode = null;
-        let nextId = 6;
+        let nextId = 1;
+        
+        // Configurações padrão do gráfico
+        let nodeDistance = 100;
+        let nodeSizeMultiplier = 1.0;
+        let chargeStrength = -200;
         
         // Configurar SVG e forças
         const svg = d3.select("#graph")
@@ -213,8 +213,8 @@
         
         // Inicializar simulação
         const simulation = d3.forceSimulation(nodes)
-            .force("link", d3.forceLink(links).id(d => d.id).distance(100))
-            .force("charge", d3.forceManyBody().strength(-200))
+            .force("link", d3.forceLink(links).id(d => d.id).distance(nodeDistance))
+            .force("charge", d3.forceManyBody().strength(chargeStrength))
             .force("center", d3.forceCenter(width / 2, height / 2))
             .on("tick", ticked);
             
@@ -240,21 +240,19 @@
             node = node.data(nodes, d => d.id)
                 .join("circle")
                 .attr("class", "node")
-                .attr("r", d => typeToRadius(d.type))
+                .attr("r", d => typeToRadius(d.type) * nodeSizeMultiplier)
                 .attr("fill", d => typeToColor(d.type))
                 .attr("stroke", "#ffffff")
                 .attr("stroke-width", 2)
                 .call(drag(simulation))
-                .on("click", nodeClicked)
-                .on("mouseover", showTooltip)
-                .on("mouseout", hideTooltip);
+                .on("click", nodeClicked);
                 
             // Atualizar rótulos
             label = label.data(nodes, d => d.id)
                 .join("text")
                 .attr("class", "node-label")
                 .attr("text-anchor", "middle")
-                .attr("dy", d => typeToRadius(d.type) + 15)
+                .attr("dy", d => typeToRadius(d.type) * nodeSizeMultiplier + 15)
                 .attr("fill", "#cccccc")
                 .text(d => d.name);
                 
@@ -327,15 +325,6 @@
             return sizes[type] || 15;
         }
         
-        function showTooltip(event, d) {
-            const tooltip = d3.select("#tooltip");
-            tooltip
-                .style("left", (event.pageX + 10) + "px")
-                .style("top", (event.pageY - 20) + "px")
-                .style("display", "block")
-                .html(`<strong>${d.name}</strong><br/>${translateType(d.type)}`);
-        }
-        
         function translateType(type) {
             const translations = {
                 scene: "Cena",
@@ -347,10 +336,6 @@
             return translations[type] || type;
         }
         
-        function hideTooltip() {
-            d3.select("#tooltip").style("display", "none");
-        }
-        
         function nodeClicked(event, d) {
             selectedNode = d;
             
@@ -359,10 +344,22 @@
                 <h3>${d.name}</h3>
                 <p>Tipo: ${translateType(d.type)}</p>
                 <p>ID: ${d.id}</p>
+                <h4>Descrição/Anotações:</h4>
+                <textarea class="node-text" id="node-text">${d.text || ""}</textarea>
+                <button id="save-text">Salvar Texto</button>
                 <button id="delete-node">Excluir Nó</button>
             `;
             
             document.getElementById("delete-node").addEventListener("click", () => deleteNode(d.id));
+            document.getElementById("save-text").addEventListener("click", saveNodeText);
+        }
+        
+        function saveNodeText() {
+            if (selectedNode) {
+                const textArea = document.getElementById("node-text");
+                selectedNode.text = textArea.value;
+                alert("Texto salvo com sucesso!");
+            }
         }
         
         function deleteNode(id) {
@@ -400,27 +397,53 @@
             if (nodes.some(n => n.id == targetValue)) targetSelect.value = targetValue;
         }
         
-        function updateComments() {
-            const container = document.getElementById("comments-container");
-            container.innerHTML = "";
+        // Atualizar valores exibidos para sliders
+        function updateSliderValues() {
+            document.getElementById("distance-value").textContent = nodeDistance;
+            document.getElementById("size-value").textContent = nodeSizeMultiplier.toFixed(1);
+            document.getElementById("charge-value").textContent = chargeStrength;
+        }
+        
+        // Aplicar configurações atualizadas
+        function applySettings() {
+            nodeDistance = parseInt(document.getElementById("node-distance").value);
+            nodeSizeMultiplier = parseInt(document.getElementById("node-size").value) / 10;
+            chargeStrength = parseInt(document.getElementById("charge-strength").value);
             
-            comments.forEach(comment => {
-                const commentEl = document.createElement("div");
-                commentEl.className = "comment";
-                commentEl.innerHTML = `
-                    <div class="comment-author">${comment.author}</div>
-                    <div class="comment-time">${comment.time}</div>
-                    <div class="comment-text">${comment.text}</div>
-                `;
-                container.appendChild(commentEl);
-            });
+            // Atualizar simulação
+            simulation.force("link").distance(nodeDistance);
+            simulation.force("charge").strength(chargeStrength);
+            
+            // Atualizar raios dos nós
+            node.attr("r", d => typeToRadius(d.type) * nodeSizeMultiplier);
+            label.attr("dy", d => typeToRadius(d.type) * nodeSizeMultiplier + 15);
+            
+            // Reiniciar simulação
+            simulation.alpha(0.3).restart();
+            
+            updateSliderValues();
         }
         
         // Inicializar UI
         updateGraph();
-        updateComments();
+        updateSliderValues();
         
-        // Event listeners
+        // Event listeners para sliders
+        document.getElementById("node-distance").addEventListener("input", function() {
+            document.getElementById("distance-value").textContent = this.value;
+        });
+        
+        document.getElementById("node-size").addEventListener("input", function() {
+            document.getElementById("size-value").textContent = (parseInt(this.value) / 10).toFixed(1);
+        });
+        
+        document.getElementById("charge-strength").addEventListener("input", function() {
+            document.getElementById("charge-value").textContent = this.value;
+        });
+        
+        // Event listeners para botões
+        document.getElementById("apply-settings").addEventListener("click", applySettings);
+        
         document.getElementById("add-node").addEventListener("click", () => {
             const type = document.getElementById("node-type").value;
             const name = document.getElementById("node-name").value;
@@ -430,17 +453,26 @@
                 return;
             }
             
+            // Obter as dimensões atuais do container
+            const container = document.querySelector(".graph-container");
+            const containerWidth = container.clientWidth;
+            const containerHeight = container.clientHeight;
+            
             const newNode = {
                 id: nextId++,
                 name: name,
                 type: type,
-                x: width / 2 + Math.random() * 100 - 50,
-                y: height / 2 + Math.random() * 100 - 50
+                text: "",
+                x: containerWidth / 2,
+                y: containerHeight / 2
             };
             
             nodes.push(newNode);
             simulation.nodes(nodes);
             updateGraph();
+            
+            // Reiniciar a simulação com uma força inicial para espalhar os nós
+            simulation.alpha(1).restart();
             
             document.getElementById("node-name").value = "";
         });
@@ -478,25 +510,6 @@
             updateGraph();
         });
         
-        document.getElementById("add-comment").addEventListener("click", () => {
-            const text = document.getElementById("comment-input").value;
-            const author = document.getElementById("comment-author").value || "Anônimo";
-            
-            if (text.trim() === "") {
-                alert("Por favor, digite um comentário");
-                return;
-            }
-            
-            const now = new Date();
-            const time = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            
-            const newComment = { author, text, time };
-            comments.unshift(newComment);
-            updateComments();
-            
-            document.getElementById("comment-input").value = "";
-        });
-        
         document.getElementById("zoom-in").addEventListener("click", () => {
             svg.transition().call(zoom.scaleBy, 1.2);
         });
@@ -507,60 +520,6 @@
         
         document.getElementById("reset-view").addEventListener("click", () => {
             svg.transition().call(zoom.transform, d3.zoomIdentity);
-        });
-        
-        document.getElementById("export-btn").addEventListener("click", () => {
-            const data = {
-                nodes: nodes.map(n => ({...n, x: undefined, y: undefined, fx: undefined, fy: undefined})),
-                links: links.map(l => ({source: l.source.id, target: l.target.id})),
-                comments: comments
-            };
-            
-            const dataStr = JSON.stringify(data, null, 2);
-            const dataUri = "data:application/json;charset=utf-8," + encodeURIComponent(dataStr);
-            
-            const exportLink = document.createElement("a");
-            exportLink.setAttribute("href", dataUri);
-            exportLink.setAttribute("download", "grafico-cenas.json");
-            exportLink.click();
-        });
-        
-        document.getElementById("import-btn").addEventListener("click", () => {
-            const fileInput = document.getElementById("import-file");
-            const file = fileInput.files[0];
-            
-            if (!file) {
-                alert("Por favor, selecione um arquivo para importar");
-                return;
-            }
-            
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                try {
-                    const data = JSON.parse(e.target.result);
-                    
-                    if (!data.nodes || !data.links || !data.comments) {
-                        throw new Error("Formato de arquivo inválido");
-                    }
-                    
-                    nodes = data.nodes;
-                    links = data.links.map(l => ({source: l.source, target: l.target}));
-                    comments = data.comments;
-                    
-                    nextId = Math.max(...nodes.map(n => n.id)) + 1;
-                    
-                    simulation.nodes(nodes);
-                    simulation.force("link").links(links);
-                    updateGraph();
-                    updateComments();
-                    
-                    // Redefinir visualização
-                    svg.transition().call(zoom.transform, d3.zoomIdentity);
-                } catch (error) {
-                    alert("Erro ao importar arquivo: " + error.message);
-                }
-            };
-            reader.readAsText(file);
         });
         
         // Lidar com redimensionamento da janela
